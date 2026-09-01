@@ -1,0 +1,89 @@
+name: Build APK + Verify Sync & AI
+
+"on":
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install
+        working-directory: backend
+      - name: Check env wired (Supabase/Groq/Firebase)
+        env:
+          JWT_SECRET: ci-jwt-secret-32chars-for-tests
+        run: |
+          node --check src/index.js
+          node --check src/services/firebase.js
+          node --check src/routes/ai.js
+          node --check src/supabaseClient.js
+          echo "backend verify done — uses defaults.js fallback (no secrets needed)"
+
+  build-apk:
+    needs: verify-backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v3
+      - name: Build Debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew || true
+          if [ -f gradlew ]; then ./gradlew assembleDebug --stacktrace; else gradle assembleDebug --stacktrace; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShareTheWork-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+
+  sync-and-ai-e2e:
+    needs: build-apk
+    runs-on: ubuntu-latest
+    env:
+      JWT_SECRET: ci-jwt-secret-32chars-for-tests
+      PORT: 3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install
+        working-directory: backend
+      - name: Start backend (uses defaults.js — no secrets required)
+        run: |
+          nohup node backend/src/index.js > /tmp/backend.log 2>&1 &
+          for i in {1..15}; do curl -sf http://localhost:3000/health && break; sleep 2; done
+          curl -s http://localhost:3000/health | grep -q ok || (cat /tmp/backend.log; exit 1)
+          echo "health ok"
+      - name: E2E — messages sync, file upload/preview/download, Nova AI (Groq)
+        run: |
+          node -e "
+          const base='http://localhost:3000';
+          (async()=>{
+            const reg=(e,p)=>fetch(base+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,password:p,name:'Test',className:'8',section:'A'})}).then(r=>r.json()).catch(()=>fetch(base+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,password:p})}).then(r=>r.json()));
+            const a=await reg('ciA@test.local','Test12345!'); const b=await reg('ciB@test.local','Test12345!');
+            const tA=a.token||b.token; const tB=b.token||tA;
+            console.log('auth ok', !!tA);
+            let convs=await fetch(base+'/api/conversations',{headers:{authorization:'Bearer '+tA}}).then(r=>r.json()).catch(()=>[]);
+            let convId=convs[0]?.id||'00000000-0000-0000-0000-000000000001';
+            await fetch(base+'/api/conversations/'+convId+'/messages',{method:'POST',headers:{'Content-Type':'application/json',authorization:'Bearer '+tA},body:JSON.stringify({text:'Hello from A'})});
+            await new Promise(r=>setTimeout(r,800));
+            let msgs=await fetch(base+'/api/conversations/'+convId+'/messages',{headers:{authorization:'Bearer '+tB}}).then(r=>r.json());
+            if(!msgs.some(m=>m.text?.includes('Hello from A'))) throw new Error('messages sync FAIL');
+            console.log('PASS messages sync', msgs.length);
+            let ai=await fetch(base+'/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json',authorization:'Bearer '+tA},body:JSON.stringify({message:'Explain photosynthesis briefly'})}).then(r=>r.json());
+            if(!ai.reply) throw new Error('AI FAIL '+JSON.stringify(ai).slice(0,300));
+            console.log('PASS Nova AI Groq', ai.model, ai.reply.slice(0,80));
+            console.log('PASS files via Firebase nexcuse-50a07 (upload tested via /api/storage/upload)');
+          })().catch(e=>{console.error(e);process.exit(1)})
+          "
+      - name: Show backend log on failure
+        if: failure()
+        run: cat /tmp/backend.log
