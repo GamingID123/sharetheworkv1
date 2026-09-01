@@ -7,7 +7,7 @@ export const DEFAULTS = {
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdhdGthZXJnY2RudXh3em9jdXB1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk5Mzc1ODYsImV4cCI6MjA5NTUxMzU4Nn0.KHiPIKWuRVOuIrYJLpv4bstfDHasqgKy77YsIIj586s",
   SUPABASE_SERVICE_ROLE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdhdGthZXJnY2RudXh3em9jdXB1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTkzNzU4NiwiZXhwIjoyMDk1NTEzNTg2fQ.e6Wfs1N6EKuN9nKS2tPhZyTqz_buZCbc0qR-bj45l8E",
   GROQ_API_KEY: "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",
-  GROQ_MODEL: "llama-3.3-70b-versatile",
+  GROQ_MODEL: "llama-3.1-8b-instant",
   GROQ_BASE_URL: "https://api.groq.com/openai/v1",
   FIREBASE_STORAGE_BUCKET: "nexcuse-50a07.appspot.com",
   // Firebase service account — keep as object so firebase.js can cert it
